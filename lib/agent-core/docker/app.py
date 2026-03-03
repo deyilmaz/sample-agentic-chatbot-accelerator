@@ -250,18 +250,46 @@ async def invoke(payload, context: RequestContext):
                                     CALLBACKS.tool_executions,
                                     logger,
                                 )
-                            final_answer_data["trajectory"] = trajectory_session
+
+                            # Always convert to dict format for evaluator compatibility
+                            # The evaluator expects a dict with 'traces' key
+                            if hasattr(trajectory_session, "model_dump"):
+                                trajectory_dict = trajectory_session.model_dump()
+                            elif hasattr(trajectory_session, "dict"):
+                                trajectory_dict = trajectory_session.dict()
+                            elif isinstance(trajectory_session, dict):
+                                trajectory_dict = trajectory_session
+                            else:
+                                logger.warning(
+                                    f"Unexpected trajectory type: {type(trajectory_session)}"
+                                )
+                                trajectory_dict = {"session_id": session_id, "traces": []}
+
+                            final_answer_data["trajectory"] = trajectory_dict
                             logger.info(
                                 "Trajectory captured for evaluation",
-                                extra={"spanCount": len(finished_spans)},
+                                extra={
+                                    "spanCount": len(finished_spans),
+                                    "traceCount": len(trajectory_dict.get("traces", [])),
+                                },
                             )
                         else:
+                            # No spans captured - still return empty trajectory for evaluator
                             logger.warning("No spans captured for trajectory")
+                            final_answer_data["trajectory"] = {
+                                "session_id": session_id,
+                                "traces": [],
+                            }
                     except Exception as traj_err:
                         logger.warning(
                             f"Failed to capture trajectory: {traj_err}",
                             extra={"error": str(traj_err)},
                         )
+                        # Still return empty trajectory on error for evaluator
+                        final_answer_data["trajectory"] = {
+                            "session_id": session_id,
+                            "traces": [],
+                        }
 
                 final_answer_payload = {
                     "action": ChatbotAction.FINAL_RESPONSE.value,
